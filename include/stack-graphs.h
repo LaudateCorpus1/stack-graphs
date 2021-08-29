@@ -336,6 +336,9 @@ struct sg_partial_symbol_stack_cells {
     size_t count;
 };
 
+// Represents an unknown list of scoped symbols.
+typedef uint32_t sg_symbol_stack_variable;
+
 // A pattern that might match against a symbol stack.  Consists of a (possibly empty) list of
 // partial scoped symbols.
 //
@@ -349,6 +352,11 @@ struct sg_partial_symbol_stack {
     // list is empty, or 0 if the list is null.
     sg_partial_symbol_stack_cell_handle cells;
     enum sg_deque_direction direction;
+    // The symbol stack variable representing the unknown content of a partial symbol stack, or 0
+    // if the variable is missing.  (If so, this partial symbol stack can only match a symbol
+    // stack with exactly the list of symbols in `cells`, instead of any symbol stack with those
+    // symbols as a prefix.)
+    sg_symbol_stack_variable variable;
 };
 
 // An element of a partial scope stack.

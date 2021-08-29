@@ -905,6 +905,9 @@ pub extern "C" fn sg_path_arena_find_all_complete_paths(
 //-------------------------------------------------------------------------------------------------
 // Partial symbol stacks
 
+/// Represents an unknown list of scoped symbols.
+pub type sg_symbol_stack_variable = u32;
+
 /// A symbol with an unknown, but possibly empty, list of exported scopes attached to it.
 #[repr(C)]
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -934,6 +937,11 @@ pub struct sg_partial_symbol_stack {
     /// list is empty, or 0 if the list is null.
     pub cells: sg_partial_symbol_stack_cell_handle,
     pub direction: sg_deque_direction,
+    /// The symbol stack variable representing the unknown content of a partial symbol stack, or 0
+    /// if the variable is missing.  (If so, this partial symbol stack can only match a symbol
+    /// stack with exactly the list of symbols in `cells`, instead of any symbol stack with those
+    /// symbols as a prefix.)
+    pub variable: sg_symbol_stack_variable,
 }
 
 impl From<PartialSymbolStack> for sg_partial_symbol_stack {
