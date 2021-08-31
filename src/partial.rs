@@ -439,6 +439,20 @@ impl PartialScopedSymbol {
         })
     }
 
+    /// Applies a set of bindings to this partial scoped symbol, producing a new scoped symbol.
+    pub fn apply_partial_bindings(
+        mut self,
+        partials: &mut PartialPaths,
+        scope_bindings: &PartialScopeStackBindings,
+    ) -> Result<PartialScopedSymbol, PathResolutionError> {
+        let scopes = match self.scopes.into_option() {
+            Some(scopes) => Some(scopes.apply_partial_bindings(partials, scope_bindings)?),
+            None => None,
+        };
+        self.scopes = scopes.into();
+        Ok(self)
+    }
+
     pub fn equals(&self, partials: &mut PartialPaths, other: &PartialScopedSymbol) -> bool {
         self.symbol == other.symbol
             && equals_option(
@@ -655,6 +669,25 @@ impl PartialSymbolStack {
         while let Some(partial_symbol) = self.pop_back(partials) {
             let symbol = partial_symbol.apply_bindings(paths, partials, scope_bindings)?;
             result.push_front(paths, symbol);
+        }
+        Ok(result)
+    }
+
+    /// Applies a set of bindings to this partial symbol stack, producing a new partial symbol
+    /// stack.
+    pub fn apply_partial_bindings(
+        mut self,
+        partials: &mut PartialPaths,
+        symbol_bindings: &PartialSymbolStackBindings,
+        scope_bindings: &PartialScopeStackBindings,
+    ) -> Result<PartialSymbolStack, PathResolutionError> {
+        let mut result = match self.variable.into_option() {
+            Some(variable) => symbol_bindings.get(variable)?,
+            None => return Ok(self),
+        };
+        while let Some(partial_symbol) = self.pop_back(partials) {
+            let partial_symbol = partial_symbol.apply_partial_bindings(partials, scope_bindings)?;
+            result.push_front(partials, partial_symbol);
         }
         Ok(result)
     }
@@ -988,6 +1021,23 @@ impl PartialScopeStack {
         };
         while let Some(scope) = self.pop_back(partials) {
             result.push_front(paths, scope);
+        }
+        Ok(result)
+    }
+
+    /// Applies a set of partial scope stack bindings to this partial scope stack, producing a new
+    /// partial scope stack.
+    pub fn apply_partial_bindings(
+        mut self,
+        partials: &mut PartialPaths,
+        bindings: &PartialScopeStackBindings,
+    ) -> Result<PartialScopeStack, PathResolutionError> {
+        let mut result = match self.variable.into_option() {
+            Some(variable) => bindings.get(variable)?,
+            None => return Ok(self),
+        };
+        while let Some(scope) = self.pop_back(partials) {
+            result.push_front(partials, scope);
         }
         Ok(result)
     }
@@ -2190,6 +2240,65 @@ impl Path {
             self.edges.push_back(paths, edge.into());
         }
         self.end_node = partial_path.end_node;
+        Ok(())
+    }
+}
+
+//-------------------------------------------------------------------------------------------------
+// Extending partial paths with partial paths
+
+impl PartialPath {
+    /// Attempts to concatenate two partial paths.  If the postcondition of the “left” partial path
+    /// is not compatible with the precondition of the “right” path, we return an error describing
+    /// why.
+    pub fn concatenate(
+        &mut self,
+        partials: &mut PartialPaths,
+        rhs: &PartialPath,
+    ) -> Result<(), PathResolutionError> {
+        if rhs.start_node != self.end_node {
+            return Err(PathResolutionError::IncorrectSourceNode);
+        }
+
+        // TODO: Ensure left and right have no overlapping variables
+
+        let mut symbol_bindings = PartialSymbolStackBindings::new();
+        let mut scope_bindings = PartialScopeStackBindings::new();
+        self.scope_stack_postcondition.unify(
+            partials,
+            rhs.scope_stack_precondition,
+            &mut scope_bindings,
+        )?;
+        self.symbol_stack_postcondition.unify(
+            partials,
+            rhs.symbol_stack_precondition,
+            &mut symbol_bindings,
+            &mut scope_bindings,
+        )?;
+
+        self.symbol_stack_precondition = self.symbol_stack_precondition.apply_partial_bindings(
+            partials,
+            &symbol_bindings,
+            &scope_bindings,
+        )?;
+        self.symbol_stack_postcondition = self.symbol_stack_postcondition.apply_partial_bindings(
+            partials,
+            &symbol_bindings,
+            &scope_bindings,
+        )?;
+
+        self.scope_stack_precondition = self
+            .scope_stack_precondition
+            .apply_partial_bindings(partials, &scope_bindings)?;
+        self.scope_stack_postcondition = self
+            .scope_stack_postcondition
+            .apply_partial_bindings(partials, &scope_bindings)?;
+
+        let mut edges = rhs.edges;
+        while let Some(edge) = edges.pop_front(partials) {
+            self.edges.push_back(partials, edge);
+        }
+        self.end_node = rhs.end_node;
         Ok(())
     }
 }
